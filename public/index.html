@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>影片字幕產生器</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f0f0f; color: #e0e0e0; min-height: 100vh; padding: 40px 20px;
+    }
+    .container { max-width: 960px; margin: 0 auto; }
+    h1 { text-align: center; font-size: 28px; margin-bottom: 8px; color: #fff; }
+    .subtitle { text-align: center; color: #888; margin-bottom: 32px; font-size: 14px; }
+
+    /* Top-right lang switcher */
+    .lang-switcher {
+      position: fixed; top: 12px; right: 16px; display: flex; gap: 4px; z-index: 10;
+    }
+    .lang-btn {
+      padding: 4px 8px; font-size: 11px; border: 1px solid #333; background: #1a1a1a;
+      color: #888; border-radius: 4px; cursor: pointer; transition: all 0.2s;
+    }
+    .lang-btn:hover { border-color: #555; color: #ccc; }
+    .lang-btn.active { background: #2563eb; border-color: #2563eb; color: #fff; }
+
+    .controls { display: flex; gap: 10px; margin-bottom: 12px; align-items: center; }
+    .path-input {
+      flex: 1; padding: 10px 14px; background: #1a1a1a; border: 1px solid #333;
+      border-radius: 8px; color: #e0e0e0; font-size: 14px; outline: none;
+    }
+    .path-input:focus { border-color: #2563eb; }
+    .path-input::placeholder { color: #555; }
+
+    .btn {
+      padding: 10px 18px; border: 1px solid #333; background: #1a1a1a; color: #e0e0e0;
+      border-radius: 8px; cursor: pointer; font-size: 14px; transition: all 0.2s; white-space: nowrap;
+    }
+    .btn:hover { background: #252525; border-color: #555; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-sm { padding: 5px 10px; font-size: 12px; border-radius: 5px; }
+    .btn-srt { background: #7c3aed; border-color: #7c3aed; color: #fff; }
+    .btn-srt:hover { background: #6d28d9; }
+
+    .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
+    .toolbar-left { display: flex; gap: 10px; align-items: center; flex: 1; flex-wrap: wrap; }
+    .sel {
+      padding: 8px 12px; background: #1a1a1a; border: 1px solid #333;
+      border-radius: 8px; color: #e0e0e0; font-size: 13px; outline: none;
+    }
+    .sel:focus { border-color: #7c3aed; }
+    .toolbar label { font-size: 13px; color: #888; white-space: nowrap; }
+
+    .dir-info { font-size: 13px; color: #888; margin-bottom: 14px; }
+    .dir-info span { color: #3b82f6; }
+
+    .file-row {
+      background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 10px;
+      padding: 12px 16px; margin-bottom: 8px; transition: opacity 0.3s;
+    }
+    .file-row.has-srt { opacity: 0.5; }
+    .file-row.has-srt:hover { opacity: 0.8; }
+    .file-row-top { display: flex; align-items: center; gap: 10px; }
+    .file-row-checkbox { accent-color: #2563eb; width: 16px; height: 16px; cursor: pointer; flex-shrink: 0; }
+    .file-row-video {
+      font-weight: 500; font-size: 14px; color: #fff; word-break: break-all; flex: 1; min-width: 0;
+    }
+    .file-row-video .size { font-size: 11px; color: #555; font-weight: 400; margin-left: 6px; }
+    .file-row-srts { display: flex; gap: 6px; flex-wrap: wrap; flex-shrink: 0; align-items: center; }
+    .srt-tag {
+      font-size: 11px; padding: 3px 8px; border-radius: 4px;
+      background: #2a2a2a; color: #888; cursor: pointer; border: 1px solid #333; transition: all 0.2s;
+    }
+    .srt-tag:hover { background: #7c3aed33; border-color: #7c3aed; color: #c4b5fd; }
+    .srt-tag.translating { background: #7c3aed22; border-color: #7c3aed; color: #a78bfa; cursor: default; }
+    .no-srt-badge {
+      font-size: 11px; padding: 3px 8px; border-radius: 4px;
+      background: #ef444422; color: #f87171; border: 1px solid #ef444444;
+    }
+
+    .progress-section { margin-top: 8px; padding-left: 26px; }
+    .file-timestamp { font-size: 11px; color: #555; margin-bottom: 4px; }
+    .file-stage { font-size: 13px; color: #888; margin-bottom: 4px; }
+    .progress-bar-bg { width: 100%; height: 6px; background: #2a2a2a; border-radius: 3px; overflow: hidden; }
+    .progress-bar-fill { height: 100%; border-radius: 3px; transition: width 0.4s ease; width: 0%; }
+    .stage-extract { background: linear-gradient(90deg, #f59e0b, #f97316); }
+    .stage-transcribe { background: linear-gradient(90deg, #3b82f6, #6366f1); }
+    .stage-translate { background: linear-gradient(90deg, #8b5cf6, #a855f7); }
+    .stage-done { background: linear-gradient(90deg, #10b981, #34d399); }
+    .stage-error { background: #ef4444; }
+    .file-meta { display: flex; gap: 16px; margin-top: 4px; font-size: 12px; }
+    .detected-lang { color: #6366f1; }
+    .saved-files { color: #10b981; }
+
+    .hidden { display: none; }
+    .empty-state { text-align: center; color: #555; padding: 50px 0; font-size: 15px; }
+    .error-msg { color: #ef4444; font-size: 13px; margin-bottom: 12px; text-align: center; }
+
+    .select-actions { font-size: 12px; color: #666; }
+    .select-actions a { color: #3b82f6; cursor: pointer; text-decoration: none; }
+    .select-actions a:hover { text-decoration: underline; }
+
+    /* Settings */
+    .settings-btn {
+      position: fixed; top: 12px; left: 16px; background: none; border: 1px solid #333;
+      border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 16px; color: #888;
+      transition: all 0.2s; z-index: 10;
+    }
+    .settings-btn:hover { border-color: #555; color: #ccc; }
+    .settings-btn .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #ef4444; margin-left: 4px; vertical-align: middle; }
+
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .modal {
+      background: #1a1a1a; border: 1px solid #333; border-radius: 14px;
+      padding: 28px 32px; width: 480px; max-width: 90vw;
+    }
+    .modal h2 { font-size: 18px; color: #fff; margin-bottom: 20px; }
+    .modal-field { margin-bottom: 16px; }
+    .modal-field label { display: block; font-size: 13px; color: #888; margin-bottom: 6px; }
+    .modal-field .key-row { display: flex; gap: 8px; align-items: center; }
+    .modal-field input {
+      flex: 1; padding: 9px 12px; background: #111; border: 1px solid #333; border-radius: 6px;
+      color: #e0e0e0; font-size: 13px; font-family: monospace; outline: none;
+    }
+    .modal-field input:focus { border-color: #2563eb; }
+    .modal-field .status { font-size: 11px; margin-top: 4px; }
+    .modal-field .status.ok { color: #10b981; }
+    .modal-field .status.missing { color: #ef4444; }
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+    .modal-msg { font-size: 13px; color: #10b981; text-align: center; margin-top: 12px; min-height: 18px; }
+  </style>
+</head>
+<body>
+  <button class="settings-btn" onclick="openSettings()" id="settingsBtn">&#9881;</button>
+  <div id="settingsModal" class="hidden"></div>
+
+  <div class="lang-switcher">
+    <button class="lang-btn" onclick="setLang('zh-TW')">繁中</button>
+    <button class="lang-btn" onclick="setLang('zh-CN')">简中</button>
+    <button class="lang-btn" onclick="setLang('en')">EN</button>
+    <button class="lang-btn" onclick="setLang('ja')">日本語</button>
+    <button class="lang-btn" onclick="setLang('ko')">한국어</button>
+  </div>
+
+  <div class="container">
+    <h1 id="i-title"></h1>
+    <p class="subtitle" id="i-subtitle"></p>
+
+    <div class="controls">
+      <button class="btn btn-primary" id="pickBtn" onclick="pickDirectory()"></button>
+      <input type="text" class="path-input" id="dirInput" style="flex:1;">
+      <button class="btn btn-sm" id="scanBtn" onclick="scanDirectory()" style="display:none;"></button>
+    </div>
+
+    <div class="toolbar hidden" id="toolbar">
+      <div class="toolbar-left">
+        <label id="i-whisper-label"></label>
+        <select class="sel" id="whisperSelect"></select>
+        <label id="i-model-label"></label>
+        <select class="sel" id="modelSelect"></select>
+        <label id="i-target-label"></label>
+        <select class="sel" id="targetLangSelect"></select>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <span class="select-actions">
+          <a onclick="selectAll()" id="i-sel-all"></a> / <a onclick="selectNone()" id="i-sel-none"></a> / <a onclick="selectNoSrt()" id="i-sel-unproc"></a>
+        </span>
+        <button class="btn btn-primary btn-sm" id="batchBtn" onclick="processBatch()"></button>
+      </div>
+    </div>
+
+    <div id="errorMsg" class="error-msg hidden"></div>
+    <div id="dirInfo" class="dir-info hidden"></div>
+    <div id="content">
+      <div id="emptyState" class="empty-state"></div>
+    </div>
+  </div>
+
+  <script>
+    // ======================== i18n ========================
+    const I18N = {
+      'zh-TW': {
+        title: '影片字幕產生器',
+        subtitle: '掃描目錄，轉錄語音或翻譯字幕，結果直接寫入同目錄',
+        placeholder: '輸入目錄路徑，例如 /Users/me/Videos',
+        pickDir: '選擇目錄', picking: '選取中...', scan: '重新掃描', scanning: '掃描中...',
+        whisperLabel: '轉錄模型:', modelLabel: '翻譯模型:', targetLabel: '目標語言:',
+        selAll: '全選', selNone: '取消全選', selUnproc: '選未處理',
+        batchBtn: '批次轉錄+翻譯 勾選項目',
+        empty: '請輸入目錄路徑並點擊「掃描目錄」',
+        emptyDir: '該目錄中沒有找到影片或 SRT 檔案',
+        noSrt: '尚無字幕', orphanTitle: '獨立 SRT 檔案',
+        dirInfo: (dir, v, n, o) => `目錄: <span>${dir}</span> — ${v} 個影片` + (n > 0 ? `，<span style="color:#f87171">${n} 個未處理</span>` : '') + (o > 0 ? `，${o} 個獨立 SRT` : ''),
+        clickTranslate: '點擊翻譯此 SRT',
+        alertNoCheck: '請先勾選要處理的影片',
+        connFail: '連線失敗: ', procFail: '處理失敗: ',
+        detectedLang: '偵測語言: ', savedSrt: (n) => `已寫入 ${n} 個 SRT`,
+        queued: '排隊中',
+        settings: '設定', settingsTitle: 'API Key 設定',
+        openaiLabel: 'OpenAI API Key（Whisper 轉錄用）',
+        groqLabel: 'Groq API Key（Whisper large-v3 轉錄用）',
+        xaiLabel: 'xAI API Key（Grok 翻譯用）',
+        save: '儲存', cancel: '取消', saved: '已儲存！',
+        configured: '已設定', notConfigured: '未設定',
+        keyPlaceholder: '貼上 API Key...',
+      },
+      'zh-CN': {
+        title: '视频字幕生成器',
+        subtitle: '扫描目录，转录语音或翻译字幕，结果直接写入同目录',
+        placeholder: '输入目录路径，例如 /Users/me/Videos',
+        pickDir: '选择目录', picking: '选取中...', scan: '重新扫描', scanning: '扫描中...',
+        whisperLabel: '转录模型:', modelLabel: '翻译模型:', targetLabel: '目标语言:',
+        selAll: '全选', selNone: '取消全选', selUnproc: '选未处理',
+        batchBtn: '批量转录+翻译 勾选项目',
+        empty: '请输入目录路径并点击「扫描目录」',
+        emptyDir: '该目录中没有找到视频或 SRT 文件',
+        noSrt: '尚无字幕', orphanTitle: '独立 SRT 文件',
+        dirInfo: (dir, v, n, o) => `目录: <span>${dir}</span> — ${v} 个视频` + (n > 0 ? `，<span style="color:#f87171">${n} 个未处理</span>` : '') + (o > 0 ? `，${o} 个独立 SRT` : ''),
+        clickTranslate: '点击翻译此 SRT',
+        alertNoCheck: '请先勾选要处理的视频',
+        connFail: '连接失败: ', procFail: '处理失败: ',
+        detectedLang: '检测语言: ', savedSrt: (n) => `已写入 ${n} 个 SRT`,
+        queued: '排队中',
+        settings: '设置', settingsTitle: 'API Key 设置',
+        openaiLabel: 'OpenAI API Key（Whisper 转录用）',
+        groqLabel: 'Groq API Key（Whisper large-v3 转录用）',
+        xaiLabel: 'xAI API Key（Grok 翻译用）',
+        save: '保存', cancel: '取消', saved: '已保存！',
+        configured: '已设置', notConfigured: '未设置',
+        keyPlaceholder: '粘贴 API Key...',
+      },
+      en: {
+        title: 'Video Subtitle Generator',
+        subtitle: 'Scan directory, transcribe audio or translate subtitles, output saved to the same directory',
+        placeholder: 'Enter directory path, e.g. /Users/me/Videos',
+        pickDir: 'Choose Directory', picking: 'Choosing...', scan: 'Rescan', scanning: 'Scanning...',
+        whisperLabel: 'Whisper:', modelLabel: 'Translate:', targetLabel: 'Target:',
+        selAll: 'All', selNone: 'None', selUnproc: 'Unprocessed',
+        batchBtn: 'Batch Transcribe+Translate Checked',
+        empty: 'Enter a directory path and click "Scan"',
+        emptyDir: 'No video or SRT files found in this directory',
+        noSrt: 'No subtitle', orphanTitle: 'Standalone SRT Files',
+        dirInfo: (dir, v, n, o) => `Dir: <span>${dir}</span> — ${v} videos` + (n > 0 ? `, <span style="color:#f87171">${n} unprocessed</span>` : '') + (o > 0 ? `, ${o} standalone SRTs` : ''),
+        clickTranslate: 'Click to translate this SRT',
+        alertNoCheck: 'Please check at least one video',
+        connFail: 'Connection failed: ', procFail: 'Processing failed: ',
+        detectedLang: 'Detected: ', savedSrt: (n) => `${n} SRT(s) saved`,
+        queued: 'Queued',
+        settings: 'Settings', settingsTitle: 'API Key Settings',
+        openaiLabel: 'OpenAI API Key (for Whisper transcription)',
+        groqLabel: 'Groq API Key (for Whisper large-v3 transcription)',
+        xaiLabel: 'xAI API Key (for Grok translation)',
+        save: 'Save', cancel: 'Cancel', saved: 'Saved!',
+        configured: 'Configured', notConfigured: 'Not configured',
+        keyPlaceholder: 'Paste API Key...',
+      },
+      ja: {
+        title: '動画字幕ジェネレーター',
+        subtitle: 'ディレクトリをスキャンし、音声を文字起こしまたは字幕を翻訳、結果は同じディレクトリに保存',
+        placeholder: 'ディレクトリパスを入力（例: /Users/me/Videos）',
+        pickDir: 'フォルダ選択', picking: '選択中...', scan: '再スキャン', scanning: 'スキャン中...',
+        whisperLabel: '文字起こし:', modelLabel: '翻訳モデル:', targetLabel: '対象言語:',
+        selAll: '全選択', selNone: '全解除', selUnproc: '未処理を選択',
+        batchBtn: '一括 文字起こし+翻訳',
+        empty: 'ディレクトリパスを入力して「スキャン」をクリック',
+        emptyDir: '動画または SRT ファイルが見つかりません',
+        noSrt: '字幕なし', orphanTitle: '独立 SRT ファイル',
+        dirInfo: (dir, v, n, o) => `ディレクトリ: <span>${dir}</span> — 動画 ${v} 件` + (n > 0 ? `、<span style="color:#f87171">未処理 ${n} 件</span>` : '') + (o > 0 ? `、独立 SRT ${o} 件` : ''),
+        clickTranslate: 'クリックしてこの SRT を翻訳',
+        alertNoCheck: '処理する動画を選択してください',
+        connFail: '接続失敗: ', procFail: '処理失敗: ',
+        detectedLang: '検出言語: ', savedSrt: (n) => `${n} 件の SRT を保存`,
+        queued: '待機中',
+        settings: '設定', settingsTitle: 'API Key 設定',
+        openaiLabel: 'OpenAI API Key（Whisper 文字起こし用）',
+        groqLabel: 'Groq API Key（Whisper large-v3 文字起こし用）',
+        xaiLabel: 'xAI API Key（Grok 翻訳用）',
+        save: '保存', cancel: 'キャンセル', saved: '保存しました！',
+        configured: '設定済み', notConfigured: '未設定',
+        keyPlaceholder: 'API Key を貼り付け...',
+      },
+      ko: {
+        title: '동영상 자막 생성기',
+        subtitle: '디렉토리를 스캔하여 음성을 전사하거나 자막을 번역하고, 결과를 같은 디렉토리에 저장',
+        placeholder: '디렉토리 경로 입력 (예: /Users/me/Videos)',
+        pickDir: '디렉토리 선택', picking: '선택 중...', scan: '다시 스캔', scanning: '스캔 중...',
+        whisperLabel: '전사 모델:', modelLabel: '번역 모델:', targetLabel: '대상 언어:',
+        selAll: '전체 선택', selNone: '전체 해제', selUnproc: '미처리 선택',
+        batchBtn: '일괄 전사+번역',
+        empty: '디렉토리 경로를 입력하고 "스캔"을 클릭하세요',
+        emptyDir: '동영상 또는 SRT 파일을 찾을 수 없습니다',
+        noSrt: '자막 없음', orphanTitle: '독립 SRT 파일',
+        dirInfo: (dir, v, n, o) => `디렉토리: <span>${dir}</span> — 동영상 ${v}개` + (n > 0 ? `, <span style="color:#f87171">미처리 ${n}개</span>` : '') + (o > 0 ? `, 독립 SRT ${o}개` : ''),
+        clickTranslate: '클릭하여 이 SRT 번역',
+        alertNoCheck: '처리할 동영상을 선택하세요',
+        connFail: '연결 실패: ', procFail: '처리 실패: ',
+        detectedLang: '감지 언어: ', savedSrt: (n) => `${n}개 SRT 저장됨`,
+        queued: '대기 중',
+        settings: '설정', settingsTitle: 'API Key 설정',
+        openaiLabel: 'OpenAI API Key (Whisper 전사용)',
+        groqLabel: 'Groq API Key (Whisper large-v3 전사용)',
+        xaiLabel: 'xAI API Key (Grok 번역용)',
+        save: '저장', cancel: '취소', saved: '저장됨!',
+        configured: '설정됨', notConfigured: '미설정',
+        keyPlaceholder: 'API Key 붙여넣기...',
+      },
+    };
+
+    // Target languages for translation
+    const TARGET_LANGS = [
+      { id: 'zh-TW', label: { 'zh-TW': '繁體中文', 'zh-CN': '繁体中文', en: 'Traditional Chinese', ja: '繁体字中国語', ko: '번체 중국어' } },
+      { id: 'zh-CN', label: { 'zh-TW': '簡體中文', 'zh-CN': '简体中文', en: 'Simplified Chinese', ja: '簡体字中国語', ko: '간체 중국어' } },
+      { id: 'en',    label: { 'zh-TW': '英文', 'zh-CN': '英文', en: 'English', ja: '英語', ko: '영어' } },
+      { id: 'ja',    label: { 'zh-TW': '日文', 'zh-CN': '日文', en: 'Japanese', ja: '日本語', ko: '일본어' } },
+      { id: 'ko',    label: { 'zh-TW': '韓文', 'zh-CN': '韩文', en: 'Korean', ja: '韓国語', ko: '한국어' } },
+    ];
+
+    let currentLang = localStorage.getItem('ui-lang') || 'zh-TW';
+    let groups = [], orphanSrts = [], currentDir = '', taskStates = {};
+
+    function t(key) { return (I18N[currentLang] || I18N['zh-TW'])[key]; }
+
+    function setLang(lang) {
+      currentLang = lang;
+      localStorage.setItem('ui-lang', lang);
+      applyI18n();
+      renderAll();
+    }
+
+    function applyI18n() {
+      document.getElementById('i-title').textContent = t('title');
+      document.getElementById('i-subtitle').textContent = t('subtitle');
+      document.getElementById('dirInput').placeholder = t('placeholder');
+      document.getElementById('pickBtn').textContent = t('pickDir');
+      document.getElementById('scanBtn').textContent = t('scan');
+      document.getElementById('i-whisper-label').textContent = t('whisperLabel');
+      document.getElementById('i-model-label').textContent = t('modelLabel');
+      document.getElementById('i-target-label').textContent = t('targetLabel');
+      document.getElementById('i-sel-all').textContent = t('selAll');
+      document.getElementById('i-sel-none').textContent = t('selNone');
+      document.getElementById('i-sel-unproc').textContent = t('selUnproc');
+      document.getElementById('batchBtn').textContent = t('batchBtn');
+      document.getElementById('emptyState').textContent = t('empty');
+      document.title = t('title');
+
+      // Update lang switcher active state
+      document.querySelectorAll('.lang-btn').forEach(btn => {
+        const lang = btn.getAttribute('onclick').match(/'(.+)'/)[1];
+        btn.classList.toggle('active', lang === currentLang);
+      });
+
+      // Update target language options
+      const sel = document.getElementById('targetLangSelect');
+      const prev = sel.value;
+      sel.innerHTML = '';
+      TARGET_LANGS.forEach(tl => {
+        const o = document.createElement('option');
+        o.value = tl.id;
+        o.textContent = tl.label[currentLang] || tl.label['en'];
+        sel.appendChild(o);
+      });
+      if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
+    }
+
+    // Load models
+    fetch('/api/models').then(r => r.json()).then(data => {
+      // Translation models
+      const sel = document.getElementById('modelSelect');
+      const buckets = {};
+      data.models.forEach(m => {
+        const label = m.provider === 'openai' ? 'OpenAI' : 'xAI (Grok)';
+        if (!buckets[label]) buckets[label] = [];
+        buckets[label].push(m);
+      });
+      for (const [label, models] of Object.entries(buckets)) {
+        const og = document.createElement('optgroup');
+        og.label = label;
+        models.forEach(m => {
+          const o = document.createElement('option');
+          o.value = m.id; o.textContent = m.name;
+          og.appendChild(o);
+        });
+        sel.appendChild(og);
+      }
+      // Whisper models
+      const wSel = document.getElementById('whisperSelect');
+      const wBuckets = {};
+      (data.whisperModels || []).forEach(m => {
+        const label = m.provider === 'groq' ? 'Groq' : 'OpenAI';
+        if (!wBuckets[label]) wBuckets[label] = [];
+        wBuckets[label].push(m);
+      });
+      for (const [label, models] of Object.entries(wBuckets)) {
+        const og = document.createElement('optgroup');
+        og.label = label;
+        models.forEach(m => {
+          const o = document.createElement('option');
+          o.value = m.id; o.textContent = m.name;
+          og.appendChild(o);
+        });
+        wSel.appendChild(og);
+      }
+    });
+
+    // Init
+    applyI18n();
+
+    document.getElementById('dirInput').addEventListener('keydown', e => { if (e.key === 'Enter') scanDirectory(); });
+
+    function formatSize(b) {
+      if (b >= 1073741824) return (b / 1073741824).toFixed(1) + ' GB';
+      if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB';
+      return (b / 1024).toFixed(0) + ' KB';
+    }
+    function nowTS() { return new Date().toLocaleString('zh-TW', { hour12: false }); }
+    function escH(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+    function escA(s) { return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
+    function showError(m) { const e = document.getElementById('errorMsg'); e.textContent = m; e.classList.remove('hidden'); }
+
+    async function pickDirectory() {
+      document.getElementById('pickBtn').textContent = t('picking');
+      document.getElementById('pickBtn').disabled = true;
+      document.getElementById('errorMsg').classList.add('hidden');
+      try {
+        const res = await fetch('/api/pick-directory', { method: 'POST' });
+        const data = await res.json();
+        if (data.cancelled) return;
+        document.getElementById('dirInput').value = data.dirPath;
+        await scanDirectory();
+      } catch (err) { showError(t('connFail') + err.message); }
+      finally { document.getElementById('pickBtn').textContent = t('pickDir'); document.getElementById('pickBtn').disabled = false; }
+    }
+
+    async function scanDirectory() {
+      const dirPath = document.getElementById('dirInput').value.trim();
+      if (!dirPath) return;
+      document.getElementById('errorMsg').classList.add('hidden');
+      try {
+        const res = await fetch('/api/scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dirPath }) });
+        const data = await res.json();
+        if (data.error) { showError(data.error); return; }
+        currentDir = data.dirPath;
+        groups = data.groups || [];
+        orphanSrts = data.orphanSrts || [];
+        taskStates = {};
+        // Show rescan button
+        document.getElementById('scanBtn').style.display = '';
+        renderAll();
+      } catch (err) { showError(t('connFail') + err.message); }
+    }
+
+    function selectAll() { document.querySelectorAll('.file-row-checkbox').forEach(c => c.checked = true); }
+    function selectNone() { document.querySelectorAll('.file-row-checkbox').forEach(c => c.checked = false); }
+    function selectNoSrt() {
+      document.querySelectorAll('.file-row-checkbox').forEach(c => c.checked = false);
+      document.querySelectorAll('.file-row:not(.has-srt) .file-row-checkbox').forEach(c => c.checked = true);
+    }
+
+    function getStageClass(s) {
+      if (!s) return '';
+      if (s.includes('extract') || s.includes('拆解') || s.includes('抽出') || s.includes('추출')) return 'stage-extract';
+      if (s.includes('transcri') || s.includes('聽寫') || s.includes('听写') || s.includes('文字起こし') || s.includes('전사')) return 'stage-transcribe';
+      if (s.includes('translat') || s.includes('翻譯') || s.includes('翻译') || s.includes('翻訳') || s.includes('번역') || s.includes('讀取') || s.includes('读取')) return 'stage-translate';
+      if (s.includes('done') || s.includes('完成') || s.includes('완료')) return 'stage-done';
+      if (s.includes('error') || s.includes('錯誤') || s.includes('错误') || s.includes('エラー') || s.includes('오류')) return 'stage-error';
+      return 'stage-extract';
+    }
+
+    function renderAll() {
+      const content = document.getElementById('content');
+      const dirInfo = document.getElementById('dirInfo');
+      const toolbar = document.getElementById('toolbar');
+
+      if (groups.length === 0 && orphanSrts.length === 0) {
+        content.innerHTML = `<div class="empty-state">${currentDir ? t('emptyDir') : t('empty')}</div>`;
+        dirInfo.classList.add('hidden');
+        toolbar.classList.add('hidden');
+        return;
+      }
+
+      const noSrtCount = groups.filter(g => g.srts.length === 0).length;
+      dirInfo.innerHTML = t('dirInfo')(escH(currentDir), groups.length, noSrtCount, orphanSrts.length);
+      dirInfo.classList.remove('hidden');
+      toolbar.classList.remove('hidden');
+
+      let html = '';
+
+      groups.forEach((g, i) => {
+        const key = 'v-' + i;
+        const hasSrt = g.srts.length > 0;
+        const st = taskStates[key] || {};
+
+        html += `<div class="file-row ${hasSrt ? 'has-srt' : ''}" id="item-${key}">`;
+        html += `<div class="file-row-top">`;
+        html += `<input type="checkbox" class="file-row-checkbox" data-key="${key}" data-path="${escA(g.video.path)}" ${hasSrt ? '' : 'checked'}>`;
+        html += `<div class="file-row-video">${escH(g.video.name)}<span class="size">${formatSize(g.video.size)}</span></div>`;
+        html += `<div class="file-row-srts">`;
+        if (g.srts.length === 0) {
+          html += `<span class="no-srt-badge">${t('noSrt')}</span>`;
+        } else {
+          g.srts.forEach((s, si) => {
+            const sKey = 'srt-' + i + '-' + si;
+            const sSt = taskStates[sKey] || {};
+            const cls = sSt.stage ? 'translating' : '';
+            html += `<span class="srt-tag ${cls}" onclick="translateOne('${sKey}','${escA(s.path)}')" title="${t('clickTranslate')}">${escH(s.name)}</span>`;
+          });
+        }
+        html += `</div></div>`;
+
+        if (st.stage) html += renderProgress(key, st);
+        g.srts.forEach((s, si) => {
+          const sKey = 'srt-' + i + '-' + si;
+          const sSt = taskStates[sKey] || {};
+          if (sSt.stage) html += renderProgress(sKey, sSt);
+        });
+        html += `</div>`;
+      });
+
+      if (orphanSrts.length > 0) {
+        html += `<div style="font-size:12px;color:#555;margin:16px 0 8px;padding-left:4px;">${t('orphanTitle')}</div>`;
+        orphanSrts.forEach((s, i) => {
+          const sKey = 'orphan-' + i;
+          const sSt = taskStates[sKey] || {};
+          const cls = sSt.stage ? 'translating' : '';
+          html += `<div class="file-row has-srt" id="item-${sKey}">`;
+          html += `<div class="file-row-top">`;
+          html += `<span class="srt-tag ${cls}" onclick="translateOne('${sKey}','${escA(s.path)}')" title="${t('clickTranslate')}" style="margin-left:26px;">${escH(s.name)}</span>`;
+          html += `<span style="font-size:11px;color:#555;margin-left:6px;">${formatSize(s.size)}</span>`;
+          html += `</div>`;
+          if (sSt.stage) html += renderProgress(sKey, sSt);
+          html += `</div>`;
+        });
+      }
+
+      content.innerHTML = html;
+    }
+
+    function renderProgress(key, st) {
+      return `
+        <div class="progress-section" id="prog-${key}">
+          <div class="file-timestamp">${st.startTime || ''}</div>
+          <div class="file-stage">${escH(st.stage)} ${st.percent > 0 && st.percent < 100 ? st.percent + '%' : ''}</div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill ${getStageClass(st.stage)}" style="width:${Math.max(st.percent || 0, 0)}%"></div>
+          </div>
+          <div class="file-meta">
+            <span class="detected-lang">${st.detectedLang ? t('detectedLang') + st.detectedLang : ''}</span>
+            <span class="saved-files">${st.savedFiles ? t('savedSrt')(st.savedFiles.length) : ''}</span>
+          </div>
+        </div>`;
+    }
+
+    function getSelectedTargetLang() { return document.getElementById('targetLangSelect').value; }
+
+    async function translateOne(key, srtPath) {
+      if (taskStates[key] && taskStates[key].stage && !taskStates[key].stage.includes('完成') && !taskStates[key].stage.includes('done') && !taskStates[key].stage.includes('完了') && !taskStates[key].stage.includes('錯誤') && !taskStates[key].stage.includes('error')) return;
+      const model = document.getElementById('modelSelect').value;
+      const targetLang = getSelectedTargetLang();
+      const startTime = nowTS();
+      taskStates[key] = { stage: t('queued'), percent: 0, startTime };
+      renderAll();
+
+      try {
+        const res = await fetch('/api/process', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tasks: [{ filePath: srtPath, type: 'srt', index: 0 }], model, targetLang, whisperModel: document.getElementById('whisperSelect').value }),
+        });
+        const data = await res.json();
+        listenSSE(data.sessionId, { 0: key });
+      } catch (err) {
+        taskStates[key] = { stage: 'error: ' + err.message, percent: -1, startTime };
+        renderAll();
+      }
+    }
+
+    async function processBatch() {
+      const checkboxes = document.querySelectorAll('.file-row-checkbox:checked');
+      if (checkboxes.length === 0) { alert(t('alertNoCheck')); return; }
+
+      const model = document.getElementById('modelSelect').value;
+      const targetLang = getSelectedTargetLang();
+      const startTime = nowTS();
+      const tasks = [];
+      const indexMap = {};
+
+      checkboxes.forEach((cb, i) => {
+        const key = cb.dataset.key;
+        const filePath = cb.dataset.path;
+        taskStates[key] = { stage: t('queued'), percent: 0, startTime };
+        tasks.push({ filePath, type: 'video', index: i });
+        indexMap[i] = key;
+      });
+      renderAll();
+
+      try {
+        const res = await fetch('/api/process', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tasks, model, targetLang, whisperModel: document.getElementById('whisperSelect').value }),
+        });
+        const data = await res.json();
+        listenSSE(data.sessionId, indexMap);
+      } catch (err) { showError(t('procFail') + err.message); }
+    }
+
+    function listenSSE(sessionId, indexMap) {
+      const evtSource = new EventSource(`/api/progress/${sessionId}`);
+      evtSource.onmessage = (event) => {
+        const d = JSON.parse(event.data);
+        if (d.done) { evtSource.close(); return; }
+        const key = indexMap[d.fileIndex];
+        if (!key) return;
+        const prev = taskStates[key] || {};
+        taskStates[key] = { ...prev, stage: d.stage || prev.stage, percent: d.percent >= 0 ? d.percent : 0, startTime: prev.startTime };
+        if (d.detectedLang) taskStates[key].detectedLang = d.detectedLang;
+        if (d.savedFiles) taskStates[key].savedFiles = d.savedFiles;
+        updateProgressDOM(key);
+      };
+      evtSource.onerror = () => evtSource.close();
+    }
+
+    function updateProgressDOM(key) {
+      const st = taskStates[key];
+      if (!st) return;
+      const item = document.getElementById('item-' + key);
+      if (!item) return;
+      let prog = document.getElementById('prog-' + key);
+      if (!prog) {
+        prog = document.createElement('div');
+        prog.className = 'progress-section';
+        prog.id = 'prog-' + key;
+        prog.innerHTML = `<div class="file-timestamp"></div><div class="file-stage"></div><div class="progress-bar-bg"><div class="progress-bar-fill"></div></div><div class="file-meta"><span class="detected-lang"></span><span class="saved-files"></span></div>`;
+        item.appendChild(prog);
+      }
+      prog.querySelector('.file-timestamp').textContent = st.startTime || '';
+      prog.querySelector('.file-stage').textContent = st.stage + (st.percent > 0 && st.percent < 100 ? ' ' + st.percent + '%' : '');
+      const bar = prog.querySelector('.progress-bar-fill');
+      bar.style.width = Math.max(st.percent || 0, 0) + '%';
+      bar.className = 'progress-bar-fill ' + getStageClass(st.stage);
+      if (st.detectedLang) prog.querySelector('.detected-lang').textContent = t('detectedLang') + st.detectedLang;
+      if (st.savedFiles) prog.querySelector('.saved-files').textContent = t('savedSrt')(st.savedFiles.length);
+    }
+
+    // ======================== Settings ========================
+    let settingsData = { hasOpenai: false, hasXai: false, openaiKey: '', xaiKey: '' };
+
+    async function loadSettings() {
+      try {
+        const res = await fetch('/api/settings');
+        settingsData = await res.json();
+        updateSettingsIndicator();
+      } catch (e) {}
+    }
+
+    function updateSettingsIndicator() {
+      const btn = document.getElementById('settingsBtn');
+      const missing = !settingsData.hasOpenai || !settingsData.hasXai;
+      // Groq is optional, so no red dot for it
+      btn.innerHTML = '&#9881;' + (missing ? '<span class="dot"></span>' : '');
+    }
+
+    function openSettings() {
+      const modal = document.getElementById('settingsModal');
+      modal.className = 'modal-overlay';
+      const sd = settingsData;
+      modal.innerHTML = `
+        <div class="modal">
+          <h2>${t('settingsTitle')}</h2>
+          <div class="modal-field">
+            <label>${t('openaiLabel')}</label>
+            <div class="key-row"><input type="text" id="setOpenai" placeholder="${t('keyPlaceholder')}" value="${sd.openaiKey}"></div>
+            <div class="status ${sd.hasOpenai ? 'ok' : 'missing'}">${sd.hasOpenai ? '&#10003; ' + t('configured') : '&#10007; ' + t('notConfigured')}</div>
+          </div>
+          <div class="modal-field">
+            <label>${t('groqLabel')}</label>
+            <div class="key-row"><input type="text" id="setGroq" placeholder="${t('keyPlaceholder')}" value="${sd.groqKey || ''}"></div>
+            <div class="status ${sd.hasGroq ? 'ok' : 'missing'}">${sd.hasGroq ? '&#10003; ' + t('configured') : '&#10007; ' + t('notConfigured')}</div>
+          </div>
+          <div class="modal-field">
+            <label>${t('xaiLabel')}</label>
+            <div class="key-row"><input type="text" id="setXai" placeholder="${t('keyPlaceholder')}" value="${sd.xaiKey}"></div>
+            <div class="status ${sd.hasXai ? 'ok' : 'missing'}">${sd.hasXai ? '&#10003; ' + t('configured') : '&#10007; ' + t('notConfigured')}</div>
+          </div>
+          <div class="modal-actions">
+            <button class="btn" onclick="closeSettings()">${t('cancel')}</button>
+            <button class="btn btn-primary" onclick="saveSettings()">${t('save')}</button>
+          </div>
+          <div class="modal-msg" id="settingsMsg"></div>
+        </div>`;
+    }
+
+    function closeSettings() {
+      document.getElementById('settingsModal').className = 'hidden';
+    }
+
+    async function saveSettings() {
+      const openaiKey = document.getElementById('setOpenai').value.trim();
+      const groqKey = document.getElementById('setGroq').value.trim();
+      const xaiKey = document.getElementById('setXai').value.trim();
+      try {
+        const res = await fetch('/api/settings', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ openaiKey, groqKey, xaiKey }),
+        });
+        const data = await res.json();
+        settingsData = data;
+        updateSettingsIndicator();
+        document.getElementById('settingsMsg').textContent = t('saved');
+        setTimeout(() => closeSettings(), 800);
+      } catch (e) {
+        document.getElementById('settingsMsg').textContent = 'Error: ' + e.message;
+        document.getElementById('settingsMsg').style.color = '#ef4444';
+      }
+    }
+
+    // Load settings on startup
+    loadSettings();
+  </script>
+</body>
+</html>
