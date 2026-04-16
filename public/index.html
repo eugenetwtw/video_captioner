@@ -160,6 +160,8 @@
 
     <div class="toolbar hidden" id="toolbar">
       <div class="toolbar-left">
+        <label id="i-source-lang-label"></label>
+        <select class="sel" id="sourceLangSelect"></select>
         <label id="i-whisper-label"></label>
         <select class="sel" id="whisperSelect"></select>
         <label id="i-model-label"></label>
@@ -169,7 +171,7 @@
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <span class="select-actions">
-          <a onclick="selectAll()" id="i-sel-all"></a> / <a onclick="selectNone()" id="i-sel-none"></a> / <a onclick="selectNoSrt()" id="i-sel-unproc"></a>
+          <a onclick="selectAll()" id="i-sel-all"></a> / <a onclick="selectNone()" id="i-sel-none"></a> / <a onclick="selectUntranscribed()" id="i-sel-untranscribed"></a> / <a onclick="selectUntranslated()" id="i-sel-untranslated"></a>
         </span>
         <button class="btn btn-primary btn-sm" id="batchBtn" onclick="processBatch()"></button>
       </div>
@@ -191,8 +193,8 @@
         placeholder: '輸入目錄路徑，例如 /Users/me/Videos',
         pickDir: '選擇目錄', picking: '選取中...', scan: '重新掃描', scanning: '掃描中...',
         whisperLabel: '轉錄模型:', modelLabel: '翻譯模型:', targetLabel: '目標語言:',
-        selAll: '全選', selNone: '取消全選', selUnproc: '選未處理',
-        batchBtn: '批次轉錄+翻譯 勾選項目',
+        selAll: '全選', selNone: '取消全選', selUntranscribed: '選未聽寫', selUntranslated: '選未翻譯',
+        batchBtn: '批次處理勾選項目',
         empty: '請輸入目錄路徑並點擊「掃描目錄」',
         emptyDir: '該目錄中沒有找到影片或 SRT 檔案',
         noSrt: '尚無字幕', orphanTitle: '獨立 SRT 檔案',
@@ -202,9 +204,11 @@
         connFail: '連線失敗: ', procFail: '處理失敗: ',
         detectedLang: '偵測語言: ', savedSrt: (n) => `已寫入 ${n} 個 SRT`,
         queued: '排隊中',
+        sourceLangLabel: '影片語言:',
         settings: '設定', settingsTitle: 'API Key 設定',
         openaiLabel: 'OpenAI API Key（Whisper 轉錄用）',
         groqLabel: 'Groq API Key（Whisper large-v3 轉錄用）',
+        fireworksLabel: 'Fireworks API Key（Whisper V3 轉錄用）',
         xaiLabel: 'xAI API Key（Grok 翻譯用）',
         save: '儲存', cancel: '取消', saved: '已儲存！',
         configured: '已設定', notConfigured: '未設定',
@@ -216,8 +220,8 @@
         placeholder: '输入目录路径，例如 /Users/me/Videos',
         pickDir: '选择目录', picking: '选取中...', scan: '重新扫描', scanning: '扫描中...',
         whisperLabel: '转录模型:', modelLabel: '翻译模型:', targetLabel: '目标语言:',
-        selAll: '全选', selNone: '取消全选', selUnproc: '选未处理',
-        batchBtn: '批量转录+翻译 勾选项目',
+        selAll: '全选', selNone: '取消全选', selUntranscribed: '选未听写', selUntranslated: '选未翻译',
+        batchBtn: '批量处理勾选项目',
         empty: '请输入目录路径并点击「扫描目录」',
         emptyDir: '该目录中没有找到视频或 SRT 文件',
         noSrt: '尚无字幕', orphanTitle: '独立 SRT 文件',
@@ -227,9 +231,11 @@
         connFail: '连接失败: ', procFail: '处理失败: ',
         detectedLang: '检测语言: ', savedSrt: (n) => `已写入 ${n} 个 SRT`,
         queued: '排队中',
+        sourceLangLabel: '视频语言:',
         settings: '设置', settingsTitle: 'API Key 设置',
         openaiLabel: 'OpenAI API Key（Whisper 转录用）',
         groqLabel: 'Groq API Key（Whisper large-v3 转录用）',
+        fireworksLabel: 'Fireworks API Key（Whisper V3 转录用）',
         xaiLabel: 'xAI API Key（Grok 翻译用）',
         save: '保存', cancel: '取消', saved: '已保存！',
         configured: '已设置', notConfigured: '未设置',
@@ -241,8 +247,8 @@
         placeholder: 'Enter directory path, e.g. /Users/me/Videos',
         pickDir: 'Choose Directory', picking: 'Choosing...', scan: 'Rescan', scanning: 'Scanning...',
         whisperLabel: 'Whisper:', modelLabel: 'Translate:', targetLabel: 'Target:',
-        selAll: 'All', selNone: 'None', selUnproc: 'Unprocessed',
-        batchBtn: 'Batch Transcribe+Translate Checked',
+        selAll: 'All', selNone: 'None', selUntranscribed: 'Untranscribed', selUntranslated: 'Untranslated',
+        batchBtn: 'Batch Process Checked',
         empty: 'Enter a directory path and click "Scan"',
         emptyDir: 'No video or SRT files found in this directory',
         noSrt: 'No subtitle', orphanTitle: 'Standalone SRT Files',
@@ -252,9 +258,11 @@
         connFail: 'Connection failed: ', procFail: 'Processing failed: ',
         detectedLang: 'Detected: ', savedSrt: (n) => `${n} SRT(s) saved`,
         queued: 'Queued',
+        sourceLangLabel: 'Source language:',
         settings: 'Settings', settingsTitle: 'API Key Settings',
         openaiLabel: 'OpenAI API Key (for Whisper transcription)',
         groqLabel: 'Groq API Key (for Whisper large-v3 transcription)',
+        fireworksLabel: 'Fireworks API Key (for Whisper V3 transcription)',
         xaiLabel: 'xAI API Key (for Grok translation)',
         save: 'Save', cancel: 'Cancel', saved: 'Saved!',
         configured: 'Configured', notConfigured: 'Not configured',
@@ -266,8 +274,8 @@
         placeholder: 'ディレクトリパスを入力（例: /Users/me/Videos）',
         pickDir: 'フォルダ選択', picking: '選択中...', scan: '再スキャン', scanning: 'スキャン中...',
         whisperLabel: '文字起こし:', modelLabel: '翻訳モデル:', targetLabel: '対象言語:',
-        selAll: '全選択', selNone: '全解除', selUnproc: '未処理を選択',
-        batchBtn: '一括 文字起こし+翻訳',
+        selAll: '全選択', selNone: '全解除', selUntranscribed: '未文字起こしを選択', selUntranslated: '未翻訳を選択',
+        batchBtn: '一括処理',
         empty: 'ディレクトリパスを入力して「スキャン」をクリック',
         emptyDir: '動画または SRT ファイルが見つかりません',
         noSrt: '字幕なし', orphanTitle: '独立 SRT ファイル',
@@ -277,9 +285,11 @@
         connFail: '接続失敗: ', procFail: '処理失敗: ',
         detectedLang: '検出言語: ', savedSrt: (n) => `${n} 件の SRT を保存`,
         queued: '待機中',
+        sourceLangLabel: '動画言語:',
         settings: '設定', settingsTitle: 'API Key 設定',
         openaiLabel: 'OpenAI API Key（Whisper 文字起こし用）',
         groqLabel: 'Groq API Key（Whisper large-v3 文字起こし用）',
+        fireworksLabel: 'Fireworks API Key（Whisper V3 文字起こし用）',
         xaiLabel: 'xAI API Key（Grok 翻訳用）',
         save: '保存', cancel: 'キャンセル', saved: '保存しました！',
         configured: '設定済み', notConfigured: '未設定',
@@ -291,8 +301,8 @@
         placeholder: '디렉토리 경로 입력 (예: /Users/me/Videos)',
         pickDir: '디렉토리 선택', picking: '선택 중...', scan: '다시 스캔', scanning: '스캔 중...',
         whisperLabel: '전사 모델:', modelLabel: '번역 모델:', targetLabel: '대상 언어:',
-        selAll: '전체 선택', selNone: '전체 해제', selUnproc: '미처리 선택',
-        batchBtn: '일괄 전사+번역',
+        selAll: '전체 선택', selNone: '전체 해제', selUntranscribed: '미전사 선택', selUntranslated: '미번역 선택',
+        batchBtn: '일괄 처리',
         empty: '디렉토리 경로를 입력하고 "스캔"을 클릭하세요',
         emptyDir: '동영상 또는 SRT 파일을 찾을 수 없습니다',
         noSrt: '자막 없음', orphanTitle: '독립 SRT 파일',
@@ -302,15 +312,40 @@
         connFail: '연결 실패: ', procFail: '처리 실패: ',
         detectedLang: '감지 언어: ', savedSrt: (n) => `${n}개 SRT 저장됨`,
         queued: '대기 중',
+        sourceLangLabel: '영상 언어:',
         settings: '설정', settingsTitle: 'API Key 설정',
         openaiLabel: 'OpenAI API Key (Whisper 전사용)',
         groqLabel: 'Groq API Key (Whisper large-v3 전사용)',
+        fireworksLabel: 'Fireworks API Key (Whisper V3 전사용)',
         xaiLabel: 'xAI API Key (Grok 번역용)',
         save: '저장', cancel: '취소', saved: '저장됨!',
         configured: '설정됨', notConfigured: '미설정',
         keyPlaceholder: 'API Key 붙여넣기...',
       },
     };
+
+    // Target language → SRT filename suffix (must match server TARGET_LANG_CONFIG)
+    const TARGET_LANG_SUFFIX = {
+      'zh-TW': '中文(繁體)',
+      'zh-CN': '中文(简体)',
+      'en':    'English',
+      'ja':    '日語',
+      'ko':    '韓語',
+    };
+
+    // Source languages for Whisper (video primary language hint)
+    const SOURCE_LANGS = [
+      { id: 'auto', label: { 'zh-TW': '自動偵測', 'zh-CN': '自动检测', en: 'Auto-detect', ja: '自動検出', ko: '자동 감지' } },
+      { id: 'ja',   label: { 'zh-TW': '日語', 'zh-CN': '日语', en: 'Japanese', ja: '日本語', ko: '일본어' } },
+      { id: 'en',   label: { 'zh-TW': '英語', 'zh-CN': '英语', en: 'English', ja: '英語', ko: '영어' } },
+      { id: 'zh',   label: { 'zh-TW': '中文', 'zh-CN': '中文', en: 'Chinese', ja: '中国語', ko: '중국어' } },
+      { id: 'ko',   label: { 'zh-TW': '韓語', 'zh-CN': '韩语', en: 'Korean', ja: '韓国語', ko: '한국어' } },
+      { id: 'fr',   label: { 'zh-TW': '法語', 'zh-CN': '法语', en: 'French', ja: 'フランス語', ko: '프랑스어' } },
+      { id: 'de',   label: { 'zh-TW': '德語', 'zh-CN': '德语', en: 'German', ja: 'ドイツ語', ko: '독일어' } },
+      { id: 'es',   label: { 'zh-TW': '西班牙語', 'zh-CN': '西班牙语', en: 'Spanish', ja: 'スペイン語', ko: '스페인어' } },
+      { id: 'it',   label: { 'zh-TW': '義大利語', 'zh-CN': '意大利语', en: 'Italian', ja: 'イタリア語', ko: '이탈리아어' } },
+      { id: 'pt',   label: { 'zh-TW': '葡萄牙語', 'zh-CN': '葡萄牙语', en: 'Portuguese', ja: 'ポルトガル語', ko: '포르투갈어' } },
+    ];
 
     // Target languages for translation
     const TARGET_LANGS = [
@@ -339,12 +374,14 @@
       document.getElementById('dirInput').placeholder = t('placeholder');
       document.getElementById('pickBtn').textContent = t('pickDir');
       document.getElementById('scanBtn').textContent = t('scan');
+      document.getElementById('i-source-lang-label').textContent = t('sourceLangLabel');
       document.getElementById('i-whisper-label').textContent = t('whisperLabel');
       document.getElementById('i-model-label').textContent = t('modelLabel');
       document.getElementById('i-target-label').textContent = t('targetLabel');
       document.getElementById('i-sel-all').textContent = t('selAll');
       document.getElementById('i-sel-none').textContent = t('selNone');
-      document.getElementById('i-sel-unproc').textContent = t('selUnproc');
+      document.getElementById('i-sel-untranscribed').textContent = t('selUntranscribed');
+      document.getElementById('i-sel-untranslated').textContent = t('selUntranslated');
       document.getElementById('batchBtn').textContent = t('batchBtn');
       document.getElementById('emptyState').textContent = t('empty');
       document.title = t('title');
@@ -354,6 +391,18 @@
         const lang = btn.getAttribute('onclick').match(/'(.+)'/)[1];
         btn.classList.toggle('active', lang === currentLang);
       });
+
+      // Update source language options (default ja)
+      const srcSel = document.getElementById('sourceLangSelect');
+      const prevSrc = srcSel.value;
+      srcSel.innerHTML = '';
+      SOURCE_LANGS.forEach(sl => {
+        const o = document.createElement('option');
+        o.value = sl.id;
+        o.textContent = sl.label[currentLang] || sl.label['en'];
+        srcSel.appendChild(o);
+      });
+      srcSel.value = (prevSrc && [...srcSel.options].some(o => o.value === prevSrc)) ? prevSrc : 'ja';
 
       // Update target language options
       const sel = document.getElementById('targetLangSelect');
@@ -392,7 +441,7 @@
       const wSel = document.getElementById('whisperSelect');
       const wBuckets = {};
       (data.whisperModels || []).forEach(m => {
-        const label = m.provider === 'groq' ? 'Groq' : 'OpenAI';
+        const label = m.provider === 'groq' ? 'Groq' : m.provider === 'fireworks' ? 'Fireworks' : 'OpenAI';
         if (!wBuckets[label]) wBuckets[label] = [];
         wBuckets[label].push(m);
       });
@@ -457,9 +506,19 @@
 
     function selectAll() { document.querySelectorAll('.file-row-checkbox').forEach(c => c.checked = true); }
     function selectNone() { document.querySelectorAll('.file-row-checkbox').forEach(c => c.checked = false); }
-    function selectNoSrt() {
-      document.querySelectorAll('.file-row-checkbox').forEach(c => c.checked = false);
-      document.querySelectorAll('.file-row:not(.has-srt) .file-row-checkbox').forEach(c => c.checked = true);
+    function selectUntranscribed() {
+      document.querySelectorAll('.file-row-checkbox').forEach(c => { c.checked = c.dataset.hasSrt !== 'true'; });
+    }
+    function selectUntranslated() {
+      const targetLang = document.getElementById('targetLangSelect').value;
+      const suffix = TARGET_LANG_SUFFIX[targetLang];
+      document.querySelectorAll('.file-row-checkbox').forEach(c => {
+        if (c.dataset.hasSrt !== 'true') { c.checked = false; return; }
+        // Has SRT but lacks one matching the current target language suffix
+        const srtNames = c.dataset.srtNames ? c.dataset.srtNames.split('|') : [];
+        const alreadyTranslated = suffix && srtNames.some(n => n.includes(suffix));
+        c.checked = !alreadyTranslated;
+      });
     }
 
     function getStageClass(s) {
@@ -498,7 +557,8 @@
 
         html += `<div class="file-row ${hasSrt ? 'has-srt' : ''}" id="item-${key}">`;
         html += `<div class="file-row-top">`;
-        html += `<input type="checkbox" class="file-row-checkbox" data-key="${key}" data-path="${escA(g.video.path)}" ${hasSrt ? '' : 'checked'}>`;
+        const srtNamesPipe = g.srts.map(s => s.name).join('|');
+        html += `<input type="checkbox" class="file-row-checkbox" data-key="${key}" data-path="${escA(g.video.path)}" data-has-srt="${hasSrt}" data-srt-path="${hasSrt ? escA(g.srts[0].path) : ''}" data-srt-names="${escA(srtNamesPipe)}" ${hasSrt ? '' : 'checked'}>`;
         html += `<div class="file-row-video">${escH(g.video.name)}<span class="size">${formatSize(g.video.size)}</span></div>`;
         html += `<div class="file-row-srts">`;
         if (g.srts.length === 0) {
@@ -591,9 +651,11 @@
 
       checkboxes.forEach((cb, i) => {
         const key = cb.dataset.key;
-        const filePath = cb.dataset.path;
+        const hasSrt = cb.dataset.hasSrt === 'true';
+        const filePath = hasSrt ? cb.dataset.srtPath : cb.dataset.path;
+        const type = hasSrt ? 'srt' : 'video';
         taskStates[key] = { stage: t('queued'), percent: 0, startTime };
-        tasks.push({ filePath, type: 'video', index: i });
+        tasks.push({ filePath, type, index: i });
         indexMap[i] = key;
       });
       renderAll();
@@ -601,7 +663,7 @@
       try {
         const res = await fetch('/api/process', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tasks, model, targetLang, whisperModel: document.getElementById('whisperSelect').value }),
+          body: JSON.stringify({ tasks, model, targetLang, whisperModel: document.getElementById('whisperSelect').value, sourceLanguage: document.getElementById('sourceLangSelect').value }),
         });
         const data = await res.json();
         listenSSE(data.sessionId, indexMap);
@@ -647,7 +709,7 @@
     }
 
     // ======================== Settings ========================
-    let settingsData = { hasOpenai: false, hasXai: false, openaiKey: '', xaiKey: '' };
+    let settingsData = { hasOpenai: false, hasXai: false, hasGroq: false, hasFireworks: false, openaiKey: '', xaiKey: '', groqKey: '', fireworksKey: '' };
 
     async function loadSettings() {
       try {
@@ -682,6 +744,11 @@
             <div class="status ${sd.hasGroq ? 'ok' : 'missing'}">${sd.hasGroq ? '&#10003; ' + t('configured') : '&#10007; ' + t('notConfigured')}</div>
           </div>
           <div class="modal-field">
+            <label>${t('fireworksLabel')}</label>
+            <div class="key-row"><input type="text" id="setFireworks" placeholder="${t('keyPlaceholder')}" value="${sd.fireworksKey || ''}"></div>
+            <div class="status ${sd.hasFireworks ? 'ok' : 'missing'}">${sd.hasFireworks ? '&#10003; ' + t('configured') : '&#10007; ' + t('notConfigured')}</div>
+          </div>
+          <div class="modal-field">
             <label>${t('xaiLabel')}</label>
             <div class="key-row"><input type="text" id="setXai" placeholder="${t('keyPlaceholder')}" value="${sd.xaiKey}"></div>
             <div class="status ${sd.hasXai ? 'ok' : 'missing'}">${sd.hasXai ? '&#10003; ' + t('configured') : '&#10007; ' + t('notConfigured')}</div>
@@ -701,11 +768,12 @@
     async function saveSettings() {
       const openaiKey = document.getElementById('setOpenai').value.trim();
       const groqKey = document.getElementById('setGroq').value.trim();
+      const fireworksKey = document.getElementById('setFireworks').value.trim();
       const xaiKey = document.getElementById('setXai').value.trim();
       try {
         const res = await fetch('/api/settings', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ openaiKey, groqKey, xaiKey }),
+          body: JSON.stringify({ openaiKey, groqKey, fireworksKey, xaiKey }),
         });
         const data = await res.json();
         settingsData = data;

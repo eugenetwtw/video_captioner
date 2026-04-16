@@ -16,6 +16,8 @@ const ENV_PATH = path.join(__dirname, '.env');
 let openai = createOpenAIClient();
 let xai = createXAIClient();
 let groq = createGroqClient();
+let fireworksV3 = createFireworksV3Client();
+let fireworksV3Turbo = createFireworksV3TurboClient();
 
 function createOpenAIClient() {
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'missing' });
@@ -26,6 +28,12 @@ function createXAIClient() {
 function createGroqClient() {
   return new OpenAI({ apiKey: process.env.GROQ_API_KEY || 'missing', baseURL: 'https://api.groq.com/openai/v1' });
 }
+function createFireworksV3Client() {
+  return new OpenAI({ apiKey: process.env.FIREWORKS_API_KEY || 'missing', baseURL: 'https://audio-prod.api.fireworks.ai/v1' });
+}
+function createFireworksV3TurboClient() {
+  return new OpenAI({ apiKey: process.env.FIREWORKS_API_KEY || 'missing', baseURL: 'https://audio-turbo.api.fireworks.ai/v1' });
+}
 function reloadClients() {
   const envContent = fs.existsSync(ENV_PATH) ? fs.readFileSync(ENV_PATH, 'utf-8') : '';
   for (const line of envContent.split('\n')) {
@@ -35,6 +43,8 @@ function reloadClients() {
   openai = createOpenAIClient();
   xai = createXAIClient();
   groq = createGroqClient();
+  fireworksV3 = createFireworksV3Client();
+  fireworksV3Turbo = createFireworksV3TurboClient();
 }
 
 // Mask key for display: show first 8 + last 4
@@ -44,21 +54,25 @@ function maskKey(key) {
   return key.slice(0, 8) + '****' + key.slice(-4);
 }
 
-// API: Get current keys (masked)
-app.get('/api/settings', (req, res) => {
-  res.json({
+function settingsPayload() {
+  return {
     openaiKey: maskKey(process.env.OPENAI_API_KEY),
     xaiKey: maskKey(process.env.XAI_API_KEY),
     groqKey: maskKey(process.env.GROQ_API_KEY),
+    fireworksKey: maskKey(process.env.FIREWORKS_API_KEY),
     hasOpenai: !!(process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'missing'),
     hasXai: !!(process.env.XAI_API_KEY && process.env.XAI_API_KEY !== 'missing'),
     hasGroq: !!(process.env.GROQ_API_KEY && process.env.GROQ_API_KEY !== 'missing'),
-  });
-});
+    hasFireworks: !!(process.env.FIREWORKS_API_KEY && process.env.FIREWORKS_API_KEY !== 'missing'),
+  };
+}
+
+// API: Get current keys (masked)
+app.get('/api/settings', (req, res) => res.json(settingsPayload()));
 
 // API: Save keys
 app.post('/api/settings', (req, res) => {
-  const { openaiKey, xaiKey, groqKey } = req.body;
+  const { openaiKey, xaiKey, groqKey, fireworksKey } = req.body;
 
   let envMap = {};
   if (fs.existsSync(ENV_PATH)) {
@@ -71,20 +85,13 @@ app.post('/api/settings', (req, res) => {
   if (openaiKey && !openaiKey.includes('****')) envMap['OPENAI_API_KEY'] = openaiKey.trim();
   if (xaiKey && !xaiKey.includes('****')) envMap['XAI_API_KEY'] = xaiKey.trim();
   if (groqKey && !groqKey.includes('****')) envMap['GROQ_API_KEY'] = groqKey.trim();
+  if (fireworksKey && !fireworksKey.includes('****')) envMap['FIREWORKS_API_KEY'] = fireworksKey.trim();
 
   const content = Object.entries(envMap).map(([k, v]) => `${k}=${v}`).join('\n') + '\n';
   fs.writeFileSync(ENV_PATH, content, 'utf-8');
   reloadClients();
 
-  res.json({
-    ok: true,
-    openaiKey: maskKey(process.env.OPENAI_API_KEY),
-    xaiKey: maskKey(process.env.XAI_API_KEY),
-    groqKey: maskKey(process.env.GROQ_API_KEY),
-    hasOpenai: !!(process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'missing'),
-    hasXai: !!(process.env.XAI_API_KEY && process.env.XAI_API_KEY !== 'missing'),
-    hasGroq: !!(process.env.GROQ_API_KEY && process.env.GROQ_API_KEY !== 'missing'),
-  });
+  res.json({ ok: true, ...settingsPayload() });
 });
 
 const VIDEO_EXTS = new Set(['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.ts', '.mts', '.mpg', '.mpeg']);
@@ -95,26 +102,23 @@ const WHISPER_MODELS = [
   { id: 'whisper-1', name: 'Whisper-1 (large-v2)', provider: 'openai' },
   { id: 'whisper-large-v3', name: 'Whisper Large V3', provider: 'groq' },
   { id: 'whisper-large-v3-turbo', name: 'Whisper Large V3 Turbo', provider: 'groq' },
+  { id: 'fireworks-whisper-v3', name: 'Fireworks Whisper V3', provider: 'fireworks' },
+  { id: 'fireworks-whisper-v3-turbo', name: 'Fireworks Whisper V3 Turbo', provider: 'fireworks' },
 ];
 
 // Available translation models
 const TRANSLATION_MODELS = [
-  { id: 'grok-4-0709', name: 'Grok 4', provider: 'xai' },
-  { id: 'grok-3-latest', name: 'Grok 3', provider: 'xai' },
-  { id: 'grok-3-mini-latest', name: 'Grok 3 Mini', provider: 'xai' },
-  { id: 'grok-3-fast-latest', name: 'Grok 3 Fast', provider: 'xai' },
-  { id: 'grok-2-latest', name: 'Grok 2', provider: 'xai' },
-  { id: 'gpt-5.4', name: 'GPT-5.4', provider: 'openai' },
-  { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini', provider: 'openai' },
-  { id: 'gpt-5.4-nano', name: 'GPT-5.4 Nano', provider: 'openai' },
-  { id: 'gpt-4.1', name: 'GPT-4.1', provider: 'openai' },
+  { id: 'grok-3-mini', name: 'Grok 3 Mini ★推薦', provider: 'xai' },
+  { id: 'grok-3', name: 'Grok 3', provider: 'xai' },
+  { id: 'grok-4-fast-non-reasoning', name: 'Grok 4 Fast', provider: 'xai' },
+  { id: 'grok-4-1-fast-non-reasoning', name: 'Grok 4.1 Fast', provider: 'xai' },
+  { id: 'grok-4-0709', name: 'Grok 4 (貴)', provider: 'xai' },
+  { id: 'grok-4.20-0309-non-reasoning', name: 'Grok 4.20 (最貴)', provider: 'xai' },
   { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', provider: 'openai' },
   { id: 'gpt-4.1-nano', name: 'GPT-4.1 Nano', provider: 'openai' },
-  { id: 'gpt-4o', name: 'GPT-4o', provider: 'openai' },
+  { id: 'gpt-4.1', name: 'GPT-4.1', provider: 'openai' },
   { id: 'gpt-4o-mini', name: 'GPT-4o Mini', provider: 'openai' },
-  { id: 'o4-mini', name: 'o4-mini', provider: 'openai' },
-  { id: 'o3', name: 'o3', provider: 'openai' },
-  { id: 'o3-mini', name: 'o3-mini', provider: 'openai' },
+  { id: 'gpt-4o', name: 'GPT-4o', provider: 'openai' },
 ];
 
 // SSE clients keyed by sessionId
@@ -229,17 +233,132 @@ async function splitAudio(audioPath, tempDir) {
   return chunks;
 }
 
-async function transcribeChunk(chunkPath, whisperModel) {
+// Re-group word-level timestamps into sentence segments at punctuation boundaries
+function regroupWordsToSegments(words, maxDuration = 8) {
+  if (!words || words.length === 0) return [];
+  const segments = [];
+  let cur = [];
+
+  for (const w of words) {
+    cur.push(w);
+    const wordText = (w.word || w.text || '').trim();
+    const duration = cur[cur.length - 1].end - cur[0].start;
+    const endsWithPunct = /[。！？!?.]$/.test(wordText);
+    if (endsWithPunct || duration >= maxDuration) {
+      segments.push({
+        start: cur[0].start,
+        end: cur[cur.length - 1].end,
+        text: cur.map(x => x.word || x.text || '').join('').trim(),
+      });
+      cur = [];
+    }
+  }
+  if (cur.length > 0) {
+    segments.push({
+      start: cur[0].start,
+      end: cur[cur.length - 1].end,
+      text: cur.map(x => x.word || x.text || '').join('').trim(),
+    });
+  }
+  return segments;
+}
+
+async function transcribeChunk(chunkPath, whisperModel, sourceLanguage) {
   const modelDef = WHISPER_MODELS.find(m => m.id === whisperModel);
+
+  // Fireworks: use verbose_json + word-level timestamps for accurate per-sentence segmentation
+  if (modelDef && modelDef.provider === 'fireworks') {
+    const client = (whisperModel === 'fireworks-whisper-v3-turbo') ? fireworksV3Turbo : fireworksV3;
+    const fileStream = fs.createReadStream(chunkPath);
+    const params = {
+      file: fileStream,
+      model: 'whisper-v3',
+      response_format: 'verbose_json',
+      timestamp_granularities: ['word'],
+      vad_model: 'silero',
+    };
+    if (sourceLanguage && sourceLanguage !== 'auto') params.language = sourceLanguage;
+    const response = await client.audio.transcriptions.create(params);
+    const words = response.words || response.segments?.flatMap(s => s.words || []) || [];
+    return {
+      segments: regroupWordsToSegments(words),
+      language: response.language || (sourceLanguage !== 'auto' ? sourceLanguage : null),
+    };
+  }
+
+  // OpenAI / Groq
   const client = (modelDef && modelDef.provider === 'groq') ? groq : openai;
+  const apiModelName = whisperModel || 'whisper-1';
   const fileStream = fs.createReadStream(chunkPath);
-  const response = await client.audio.transcriptions.create({
+  const params = {
     file: fileStream,
-    model: whisperModel || 'whisper-1',
+    model: apiModelName,
     response_format: 'verbose_json',
     timestamp_granularities: ['segment'],
-  });
-  return response;
+  };
+  if (sourceLanguage && sourceLanguage !== 'auto') params.language = sourceLanguage;
+  return await client.audio.transcriptions.create(params);
+}
+
+// Whisper tokenizer inserts spaces between every CJK token — remove them
+function normalizeWhisperText(text) {
+  // Collapse multiple spaces to one
+  text = text.replace(/\s+/g, ' ').trim();
+  // Remove spaces between CJK characters (covers も、な、で、す etc.)
+  let prev;
+  do {
+    prev = text;
+    text = text.replace(/([\u3000-\u9FFF\uFF00-\uFFEF])\s+([\u3000-\u9FFF\uFF00-\uFFEF])/g, '$1$2');
+  } while (text !== prev);
+  // Remove space before/after ASCII punctuation when surrounded by CJK
+  text = text.replace(/([\u3000-\u9FFF\uFF00-\uFFEF])\s+([.!?,;:])/g, '$1$2');
+  text = text.replace(/([.!?,;:])\s+([\u3000-\u9FFF\uFF00-\uFFEF])/g, '$1$2');
+  return text;
+}
+
+// Split long segments (e.g. 30-second Fireworks blocks) at sentence boundaries.
+// Timestamps are distributed proportionally by character count.
+function splitLongSegments(segments, maxDuration = 7) {
+  const result = [];
+  for (const seg of segments) {
+    const duration = seg.end - seg.start;
+    const text = normalizeWhisperText(seg.text);
+
+    if (duration <= maxDuration) {
+      result.push({ ...seg, text });
+      continue;
+    }
+
+    // Split at Japanese / ASCII sentence-ending punctuation
+    const sentences = [];
+    let cur = '';
+    for (let i = 0; i < text.length; i++) {
+      cur += text[i];
+      if ('。！？!?.'.includes(text[i]) && cur.trim().length > 1) {
+        // Skip trailing spaces after punctuation
+        while (i + 1 < text.length && text[i + 1] === ' ') i++;
+        sentences.push(cur.trim());
+        cur = '';
+      }
+    }
+    if (cur.trim()) sentences.push(cur.trim());
+
+    if (sentences.length <= 1) {
+      result.push({ ...seg, text });
+      continue;
+    }
+
+    // Distribute time proportionally by character count
+    const totalChars = sentences.reduce((sum, s) => sum + s.length, 0);
+    let start = seg.start;
+    for (const sentence of sentences) {
+      const proportion = sentence.length / totalChars;
+      const end = Math.min(start + duration * proportion, seg.end);
+      result.push({ start, end, text: sentence });
+      start = end;
+    }
+  }
+  return result;
 }
 
 function formatSrtTime(seconds) {
@@ -255,7 +374,7 @@ function buildSrt(segments) {
   segments.forEach((seg, i) => {
     srt += `${i + 1}\n`;
     srt += `${formatSrtTime(seg.start)} --> ${formatSrtTime(seg.end)}\n`;
-    srt += `${seg.text.trim()}\n\n`;
+    srt += `${normalizeWhisperText(seg.text)}\n\n`;
   });
   return srt;
 }
@@ -330,7 +449,7 @@ async function translateSrt(srtContent, model, targetLang, sessionId, fileIndex,
 }
 
 // Process a single video file (full pipeline)
-async function processVideoFile(filePath, model, targetLang, whisperModel, sessionId, fileIndex) {
+async function processVideoFile(filePath, model, targetLang, whisperModel, sessionId, fileIndex, sourceLanguage) {
   const tempDir = path.join(__dirname, 'temp', uuidv4());
   fs.mkdirSync(tempDir, { recursive: true });
 
@@ -352,7 +471,7 @@ async function processVideoFile(filePath, model, targetLang, whisperModel, sessi
     let completedChunks = 0;
 
     const transcriptionPromises = chunks.map(async (chunk) => {
-      const result = await transcribeChunk(chunk.path, whisperModel);
+      const result = await transcribeChunk(chunk.path, whisperModel, sourceLanguage);
       completedChunks++;
       const pct = 25 + Math.round((completedChunks / totalChunks) * 45);
       sendProgress(sessionId, fileIndex, { stage: '聽寫語音中', percent: pct });
@@ -376,6 +495,9 @@ async function processVideoFile(filePath, model, targetLang, whisperModel, sessi
         }
       }
     }
+
+    // Step 4.5: Re-segment long blocks at sentence boundaries
+    allSegments = splitLongSegments(allSegments);
 
     // Step 5: Save original SRT
     const srtContent = buildSrt(allSegments);
@@ -488,7 +610,10 @@ app.post('/api/scan', (req, res) => {
   // Group: each video with its matching SRTs
   const groups = videoNames.map(vName => {
     const base = path.basename(vName, path.extname(vName));
-    const matchedSrts = srtNames.filter(s => s.startsWith(base));
+    const matchedSrts = srtNames.filter(s => {
+      const srtBase = path.basename(s, '.srt');
+      return srtBase === base || srtBase.startsWith(base + '-') || srtBase.startsWith(base + '.');
+    });
     return {
       video: {
         name: vName,
@@ -518,12 +643,13 @@ app.post('/api/scan', (req, res) => {
 
 // API: Start processing (video full pipeline or SRT translate-only)
 app.post('/api/process', async (req, res) => {
-  const { tasks, model, targetLang, whisperModel } = req.body;
+  const { tasks, model, targetLang, whisperModel, sourceLanguage } = req.body;
   if (!tasks || !tasks.length) return res.status(400).json({ error: 'No tasks provided' });
 
   const translationModel = model || 'grok-3-fast-latest';
   const tLang = targetLang || 'zh-TW';
   const wModel = whisperModel || 'whisper-1';
+  const srcLang = sourceLanguage || 'auto';
   const sessionId = uuidv4();
   sseClients.set(sessionId, []);
   res.json({ sessionId, taskCount: tasks.length });
@@ -538,7 +664,7 @@ app.post('/api/process', async (req, res) => {
         const task = queue.shift();
         if (!task) break;
         if (task.type === 'video') {
-          await processVideoFile(task.filePath, translationModel, tLang, wModel, sessionId, task.index);
+          await processVideoFile(task.filePath, translationModel, tLang, wModel, sessionId, task.index, srcLang);
         } else if (task.type === 'srt') {
           await translateSrtFile(task.filePath, translationModel, tLang, sessionId, task.index);
         }
