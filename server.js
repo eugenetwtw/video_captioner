@@ -99,11 +99,11 @@ const SRT_EXT = '.srt';
 
 // Available Whisper (transcription) models
 const WHISPER_MODELS = [
-  { id: 'whisper-1', name: 'Whisper-1 (large-v2)', provider: 'openai' },
-  { id: 'whisper-large-v3', name: 'Whisper Large V3', provider: 'groq' },
-  { id: 'whisper-large-v3-turbo', name: 'Whisper Large V3 Turbo', provider: 'groq' },
   { id: 'fireworks-whisper-v3', name: 'Fireworks Whisper V3', provider: 'fireworks' },
   { id: 'fireworks-whisper-v3-turbo', name: 'Fireworks Whisper V3 Turbo', provider: 'fireworks' },
+  { id: 'whisper-large-v3', name: 'Whisper Large V3', provider: 'groq' },
+  { id: 'whisper-large-v3-turbo', name: 'Whisper Large V3 Turbo', provider: 'groq' },
+  { id: 'whisper-1', name: 'Whisper-1 (large-v2)', provider: 'openai' },
 ];
 
 // Available translation models
@@ -398,7 +398,7 @@ const TARGET_LANG_CONFIG = {
 async function translateSrt(srtContent, model, targetLang, sessionId, fileIndex, percentStart, percentEnd) {
   const client = getClientForModel(model);
   const tlConf = TARGET_LANG_CONFIG[targetLang] || TARGET_LANG_CONFIG['zh-TW'];
-  const SYSTEM_MSG = `你是一個專業的字幕翻譯員。請將以下 SRT 字幕內容翻譯成${tlConf.prompt}。保持 SRT 格式不變（序號、時間軸不要改動），只翻譯文字部分。直接輸出翻譯後的 SRT 內容，不要加任何解釋。`;
+  const SYSTEM_MSG = `你是專業字幕翻譯員。任務：將 SRT 字幕的文字部分全部翻譯成【${tlConf.prompt}】。\n規則：\n1. 序號與時間軸一字不動保留\n2. 每一條字幕的文字必須翻譯成${tlConf.prompt}，禁止保留原文語言\n3. 直接輸出完整 SRT，不加任何說明或前言`;
   const TIMEOUT = { timeout: 5 * 60 * 1000 };
 
   // Split SRT into entry blocks (each block = index + time + text)
@@ -413,8 +413,8 @@ async function translateSrt(srtContent, model, targetLang, sessionId, fileIndex,
     const stageLabel = `翻譯成${tlConf.name}中`;
     sendProgress(sessionId, fileIndex, { stage: stageLabel, percent: percentStart });
     const response = await client.chat.completions.create({
-      model, messages: [{ role: 'system', content: SYSTEM_MSG }, { role: 'user', content: srtContent }],
-      temperature: 0.3,
+      model, messages: [{ role: 'system', content: SYSTEM_MSG }, { role: 'user', content: `請將以下所有字幕翻譯成${tlConf.prompt}：\n\n${srtContent}` }],
+      temperature: 0,
     }, TIMEOUT);
     sendProgress(sessionId, fileIndex, { stage: stageLabel, percent: percentEnd });
     return response.choices[0].message.content.trim();
@@ -434,8 +434,8 @@ async function translateSrt(srtContent, model, targetLang, sessionId, fileIndex,
   let completed = 0;
   const results = await Promise.all(batches.map(async (batch, i) => {
     const response = await client.chat.completions.create({
-      model, messages: [{ role: 'system', content: SYSTEM_MSG }, { role: 'user', content: batch }],
-      temperature: 0.3,
+      model, messages: [{ role: 'system', content: SYSTEM_MSG }, { role: 'user', content: `請將以下所有字幕翻譯成${tlConf.prompt}：\n\n${batch}` }],
+      temperature: 0,
     }, TIMEOUT);
     completed++;
     const pct = percentStart + Math.round((completed / batches.length) * (percentEnd - percentStart));
