@@ -536,6 +536,12 @@
       const dirInfo = document.getElementById('dirInfo');
       const toolbar = document.getElementById('toolbar');
 
+      // Preserve user's checkbox selection across re-renders
+      const existingBoxes = document.querySelectorAll('.file-row-checkbox');
+      const isFirstRender = existingBoxes.length === 0;
+      const checkedKeys = new Set();
+      existingBoxes.forEach(cb => { if (cb.checked) checkedKeys.add(cb.dataset.key); });
+
       if (groups.length === 0 && orphanSrts.length === 0) {
         content.innerHTML = `<div class="empty-state">${currentDir ? t('emptyDir') : t('empty')}</div>`;
         dirInfo.classList.add('hidden');
@@ -558,7 +564,9 @@
         html += `<div class="file-row ${hasSrt ? 'has-srt' : ''}" id="item-${key}">`;
         html += `<div class="file-row-top">`;
         const srtNamesPipe = g.srts.map(s => s.name).join('|');
-        html += `<input type="checkbox" class="file-row-checkbox" data-key="${key}" data-path="${escA(g.video.path)}" data-has-srt="${hasSrt}" data-srt-path="${hasSrt ? escA(g.srts[0].path) : ''}" data-srt-names="${escA(srtNamesPipe)}" ${hasSrt ? '' : 'checked'}>`;
+        // First render: default check items without SRT. Re-render: respect user's current selection.
+        const isChecked = isFirstRender ? !hasSrt : checkedKeys.has(key);
+        html += `<input type="checkbox" class="file-row-checkbox" data-key="${key}" data-path="${escA(g.video.path)}" data-has-srt="${hasSrt}" data-srt-path="${hasSrt ? escA(g.srts[0].path) : ''}" data-srt-names="${escA(srtNamesPipe)}" ${isChecked ? 'checked' : ''}>`;
         html += `<div class="file-row-video">${escH(g.video.name)}<span class="size">${formatSize(g.video.size)}</span></div>`;
         html += `<div class="file-row-srts">`;
         if (g.srts.length === 0) {

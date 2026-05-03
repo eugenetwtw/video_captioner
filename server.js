@@ -99,6 +99,7 @@ const SRT_EXT = '.srt';
 
 // Available Whisper (transcription) models
 const WHISPER_MODELS = [
+  { id: 'grok-stt', name: 'Grok STT (xAI)', provider: 'xai-stt' },
   { id: 'fireworks-whisper-v3', name: 'Fireworks Whisper V3', provider: 'fireworks' },
   { id: 'fireworks-whisper-v3-turbo', name: 'Fireworks Whisper V3 Turbo', provider: 'fireworks' },
   { id: 'whisper-large-v3', name: 'Whisper Large V3', provider: 'groq' },
@@ -106,14 +107,22 @@ const WHISPER_MODELS = [
   { id: 'whisper-1', name: 'Whisper-1 (large-v2)', provider: 'openai' },
 ];
 
+// xAI STT returns full language names — map back to 2-letter codes for our LANG_MAP
+const XAI_LANG_NAME_TO_CODE = {
+  japanese: 'ja', english: 'en', chinese: 'zh', korean: 'ko',
+  french: 'fr', german: 'de', spanish: 'es', italian: 'it',
+  portuguese: 'pt', russian: 'ru', arabic: 'ar', thai: 'th',
+};
+
 // Available translation models
 const TRANSLATION_MODELS = [
   { id: 'grok-3-mini', name: 'Grok 3 Mini ★推薦', provider: 'xai' },
   { id: 'grok-3', name: 'Grok 3', provider: 'xai' },
   { id: 'grok-4-fast-non-reasoning', name: 'Grok 4 Fast', provider: 'xai' },
   { id: 'grok-4-1-fast-non-reasoning', name: 'Grok 4.1 Fast', provider: 'xai' },
-  { id: 'grok-4-0709', name: 'Grok 4 (貴)', provider: 'xai' },
-  { id: 'grok-4.20-0309-non-reasoning', name: 'Grok 4.20 (最貴)', provider: 'xai' },
+  { id: 'grok-4.3', name: 'Grok 4.3', provider: 'xai' },
+  { id: 'grok-4-0709', name: 'Grok 4 (舊)', provider: 'xai' },
+  { id: 'grok-4.20-0309-non-reasoning', name: 'Grok 4.20', provider: 'xai' },
   { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', provider: 'openai' },
   { id: 'gpt-4.1-nano', name: 'GPT-4.1 Nano', provider: 'openai' },
   { id: 'gpt-4.1', name: 'GPT-4.1', provider: 'openai' },
@@ -266,6 +275,34 @@ function regroupWordsToSegments(words, maxDuration = 8) {
 async function transcribeChunk(chunkPath, whisperModel, sourceLanguage) {
   const modelDef = WHISPER_MODELS.find(m => m.id === whisperModel);
 
+  // xAI Grok STT — custom endpoint, returns word-level timestamps natively
+  if (modelDef && modelDef.provider === 'xai-stt') {
+    const fileBuffer = fs.readFileSync(chunkPath);
+    const form = new FormData();
+    form.append('file', new Blob([fileBuffer], { type: 'audio/mpeg' }), path.basename(chunkPath));
+    if (sourceLanguage && sourceLanguage !== 'auto') form.append('language', sourceLanguage);
+
+    const resp = await fetch('https://api.x.ai/v1/stt', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${process.env.XAI_API_KEY}` },
+      body: form,
+    });
+    if (!resp.ok) throw new Error(`Grok STT error ${resp.status}: ${await resp.text()}`);
+    const data = await resp.json();
+
+    const words = (data.words || []).map(w => ({ word: w.text, start: w.start, end: w.end }));
+    const detectedCode = data.language
+      ? (XAI_LANG_NAME_TO_CODE[data.language.toLowerCase()] || data.language.toLowerCase().slice(0, 2))
+      : (sourceLanguage !== 'auto' ? sourceLanguage : null);
+
+    return {
+      segments: words.length > 0
+        ? regroupWordsToSegments(words)
+        : [{ start: 0, end: data.duration || 30, text: data.text || '' }],
+      language: detectedCode,
+    };
+  }
+
   // Fireworks: use verbose_json + word-level timestamps for accurate per-sentence segmentation
   if (modelDef && modelDef.provider === 'fireworks') {
     const client = (whisperModel === 'fireworks-whisper-v3-turbo') ? fireworksV3Turbo : fireworksV3;
@@ -405,8 +442,9 @@ async function translateSrt(srtContent, model, targetLang, sessionId, fileIndex,
   const entries = srtContent.trim().split(/\n\n+/);
   const totalEntries = entries.length;
 
-  // Decide batch size: <=100 entries → 1 batch, otherwise ~100 per batch
-  const batchSize = 100;
+  // Decide batch size: most SRT files (<=500 entries) go in a single request.
+  // Grok 4.3 / GPT-4.1 etc. have 1M+ context windows — only split for genuinely huge files.
+  const batchSize = 500;
 
   if (totalEntries <= batchSize) {
     // Single batch
@@ -480,11 +518,13 @@ async function processVideoFile(filePath, model, targetLang, whisperModel, sessi
 
     const transcriptions = await Promise.all(transcriptionPromises);
 
-    // Step 4: Merge segments
+    // Step 4: Merge segments. Honor user's source language selection over API's detection.
     let allSegments = [];
-    let detectedLang = 'en';
+    let detectedLang = (sourceLanguage && sourceLanguage !== 'auto') ? sourceLanguage : 'en';
     for (const trans of transcriptions) {
-      if (trans.language) detectedLang = trans.language;
+      if (trans.language && (!sourceLanguage || sourceLanguage === 'auto')) {
+        detectedLang = trans.language;
+      }
       if (trans.segments) {
         for (const seg of trans.segments) {
           allSegments.push({
