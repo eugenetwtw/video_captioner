@@ -3,3 +3,4 @@ node_modules/
 temp/
 uploads/
 .claude
+.DS_Store
