@@ -97,14 +97,16 @@ app.post('/api/settings', (req, res) => {
 const VIDEO_EXTS = new Set(['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.ts', '.mts', '.mpg', '.mpeg']);
 const SRT_EXT = '.srt';
 
-// Available Whisper (transcription) models
+// Available Whisper (transcription) models.
+// audioBitrate / sampleRate control ffmpeg audio extraction quality.
+// maxBytes is the per-request size limit; below this, we send the whole audio in one shot (no chunking).
 const WHISPER_MODELS = [
-  { id: 'grok-stt', name: 'Grok STT (xAI)', provider: 'xai-stt' },
-  { id: 'fireworks-whisper-v3', name: 'Fireworks Whisper V3', provider: 'fireworks' },
-  { id: 'fireworks-whisper-v3-turbo', name: 'Fireworks Whisper V3 Turbo', provider: 'fireworks' },
-  { id: 'whisper-large-v3', name: 'Whisper Large V3', provider: 'groq' },
-  { id: 'whisper-large-v3-turbo', name: 'Whisper Large V3 Turbo', provider: 'groq' },
-  { id: 'whisper-1', name: 'Whisper-1 (large-v2)', provider: 'openai' },
+  { id: 'grok-stt',                    name: 'Grok STT (xAI)',              provider: 'xai-stt',   audioBitrate: '192k', sampleRate: 24000, maxBytes: 480 * 1024 * 1024 },
+  { id: 'fireworks-whisper-v3',        name: 'Fireworks Whisper V3',        provider: 'fireworks', audioBitrate: '192k', sampleRate: 24000, maxBytes: 900 * 1024 * 1024 },
+  { id: 'fireworks-whisper-v3-turbo',  name: 'Fireworks Whisper V3 Turbo',  provider: 'fireworks', audioBitrate: '192k', sampleRate: 24000, maxBytes: 900 * 1024 * 1024 },
+  { id: 'whisper-large-v3',            name: 'Whisper Large V3',            provider: 'groq',      audioBitrate: '96k',  sampleRate: 16000, maxBytes:  24 * 1024 * 1024 },
+  { id: 'whisper-large-v3-turbo',      name: 'Whisper Large V3 Turbo',      provider: 'groq',      audioBitrate: '96k',  sampleRate: 16000, maxBytes:  24 * 1024 * 1024 },
+  { id: 'whisper-1',                   name: 'Whisper-1 (large-v2)',        provider: 'openai',    audioBitrate: '96k',  sampleRate: 16000, maxBytes:  24 * 1024 * 1024 },
 ];
 
 // xAI STT returns full language names — map back to 2-letter codes for our LANG_MAP
@@ -163,13 +165,13 @@ function getAudioDuration(filePath) {
   });
 }
 
-function extractAudio(videoPath, outputPath, sessionId, fileIndex) {
+function extractAudio(videoPath, outputPath, sessionId, fileIndex, audioBitrate = '96k', sampleRate = 16000) {
   return new Promise((resolve, reject) => {
     sendProgress(sessionId, fileIndex, { stage: '拆解聲音中', percent: 5 });
     const { spawn } = require('child_process');
     const args = [
       '-i', videoPath,
-      '-vn', '-ac', '1', '-ar', '16000', '-ab', '64k',
+      '-vn', '-ac', '1', '-ar', String(sampleRate), '-ab', audioBitrate,
       '-f', 'mp3', '-y', outputPath,
     ];
     const proc = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -206,16 +208,16 @@ function extractAudio(videoPath, outputPath, sessionId, fileIndex) {
   });
 }
 
-async function splitAudio(audioPath, tempDir) {
+async function splitAudio(audioPath, tempDir, maxBytes = 24 * 1024 * 1024) {
   const stat = fs.statSync(audioPath);
-  const fileSizeMB = stat.size / (1024 * 1024);
 
-  if (fileSizeMB <= 24) {
+  // If audio fits within the model's per-request limit, send it whole — no splitting.
+  if (stat.size <= maxBytes) {
     return [{ path: audioPath, startTime: 0 }];
   }
 
   const duration = await getAudioDuration(audioPath);
-  const numChunks = Math.ceil(fileSizeMB / 24);
+  const numChunks = Math.ceil(stat.size / maxBytes);
   const chunkDuration = duration / numChunks;
   const chunks = [];
 
@@ -240,6 +242,85 @@ async function splitAudio(audioPath, tempDir) {
   }
 
   return chunks;
+}
+
+// Find suspicious silent gaps in the segment list and re-transcribe those slices.
+// STT engines (especially Whisper) sometimes skip whole 30-second windows when confidence is low,
+// leaving long unexplained silences. We re-extract each gap with a small context buffer and
+// transcribe it again, then merge any new segments back into the timeline.
+async function fillTranscriptionGaps({
+  segments, audioPath, audioDuration, whisperModel, sourceLanguage,
+  sessionId, fileIndex, tempDir, basePercent = 70, endPercent = 78,
+}) {
+  const MIN_GAP_SECONDS = 10;
+  const BUFFER_SECONDS = 2;
+
+  // Sort by start time
+  segments.sort((a, b) => a.start - b.start);
+
+  // Detect gaps (between segments, plus head & tail of the audio)
+  const gaps = [];
+  let cursor = 0;
+  for (const seg of segments) {
+    if (seg.start - cursor > MIN_GAP_SECONDS) {
+      gaps.push({ start: cursor, end: seg.start });
+    }
+    cursor = Math.max(cursor, seg.end);
+  }
+  if (audioDuration - cursor > MIN_GAP_SECONDS) {
+    gaps.push({ start: cursor, end: audioDuration });
+  }
+
+  if (gaps.length === 0) return segments;
+
+  sendProgress(sessionId, fileIndex, {
+    stage: `補洞中 (${gaps.length} 段可疑空白)`, percent: basePercent,
+  });
+
+  const { spawn } = require('child_process');
+  const newSegments = [];
+
+  for (let i = 0; i < gaps.length; i++) {
+    const gap = gaps[i];
+    const sliceStart = Math.max(0, gap.start - BUFFER_SECONDS);
+    const sliceEnd = Math.min(audioDuration, gap.end + BUFFER_SECONDS);
+    const slicePath = path.join(tempDir, `gap_${i}.mp3`);
+
+    // Extract the gap audio
+    try {
+      await new Promise((resolve, reject) => {
+        const proc = spawn('ffmpeg', [
+          '-i', audioPath, '-ss', String(sliceStart), '-t', String(sliceEnd - sliceStart),
+          '-y', slicePath,
+        ], { stdio: ['ignore', 'ignore', 'pipe'] });
+        proc.on('close', () => {
+          if (fs.existsSync(slicePath) && fs.statSync(slicePath).size > 0) resolve();
+          else reject(new Error('gap slice failed'));
+        });
+        proc.on('error', reject);
+      });
+
+      // Re-transcribe the slice
+      const result = await transcribeChunk(slicePath, whisperModel, sourceLanguage);
+      if (result.segments) {
+        for (const s of result.segments) {
+          const absStart = s.start + sliceStart;
+          const absEnd = s.end + sliceStart;
+          // Only keep segments that fall inside the real gap (drop content from the buffer overlap)
+          if (absStart >= gap.start - 0.5 && absEnd <= gap.end + 0.5 && s.text.trim()) {
+            newSegments.push({ start: absStart, end: absEnd, text: s.text });
+          }
+        }
+      }
+    } catch (e) {
+      console.error(`Gap ${i} (${gap.start.toFixed(1)}s-${gap.end.toFixed(1)}s) re-transcribe failed:`, e.message);
+    }
+
+    const pct = basePercent + Math.round(((i + 1) / gaps.length) * (endPercent - basePercent));
+    sendProgress(sessionId, fileIndex, { stage: `補洞中 (${i + 1}/${gaps.length})`, percent: pct });
+  }
+
+  return [...segments, ...newSegments].sort((a, b) => a.start - b.start);
 }
 
 // Re-group word-level timestamps into sentence segments at punctuation boundaries
@@ -307,12 +388,15 @@ async function transcribeChunk(chunkPath, whisperModel, sourceLanguage) {
   if (modelDef && modelDef.provider === 'fireworks') {
     const client = (whisperModel === 'fireworks-whisper-v3-turbo') ? fireworksV3Turbo : fireworksV3;
     const fileStream = fs.createReadStream(chunkPath);
+    // Use whisperx-pyannet VAD (more permissive than silero — fewer false negatives on quiet speech)
+    // and temperature fallback so low-confidence segments retry instead of being dropped silently.
     const params = {
       file: fileStream,
       model: 'whisper-v3',
       response_format: 'verbose_json',
       timestamp_granularities: ['word'],
-      vad_model: 'silero',
+      vad_model: 'whisperx-pyannet',
+      temperature: '0.0,0.2,0.4,0.6,0.8,1.0',
     };
     if (sourceLanguage && sourceLanguage !== 'auto') params.language = sourceLanguage;
     const response = await client.audio.transcriptions.create(params);
@@ -495,13 +579,19 @@ async function processVideoFile(filePath, model, targetLang, whisperModel, sessi
   const outputDir = path.dirname(filePath);
 
   try {
-    // Step 1: Extract audio
-    const audioPath = path.join(tempDir, 'audio.mp3');
-    await extractAudio(filePath, audioPath, sessionId, fileIndex);
+    // Look up audio quality + size limit for the chosen model
+    const modelDef = WHISPER_MODELS.find(m => m.id === whisperModel) || {};
+    const audioBitrate = modelDef.audioBitrate || '96k';
+    const sampleRate = modelDef.sampleRate || 16000;
+    const maxBytes = modelDef.maxBytes || 24 * 1024 * 1024;
 
-    // Step 2: Split audio
+    // Step 1: Extract audio at the model's preferred quality
+    const audioPath = path.join(tempDir, 'audio.mp3');
+    await extractAudio(filePath, audioPath, sessionId, fileIndex, audioBitrate, sampleRate);
+
+    // Step 2: Split only if the audio exceeds the model's per-request size limit
     sendProgress(sessionId, fileIndex, { stage: '拆解聲音中', percent: 22 });
-    const chunks = await splitAudio(audioPath, tempDir);
+    const chunks = await splitAudio(audioPath, tempDir, maxBytes);
 
     // Step 3: Transcribe in parallel
     sendProgress(sessionId, fileIndex, { stage: '聽寫語音中', percent: 25 });
@@ -538,6 +628,19 @@ async function processVideoFile(filePath, model, targetLang, whisperModel, sessi
 
     // Step 4.5: Re-segment long blocks at sentence boundaries
     allSegments = splitLongSegments(allSegments);
+
+    // Step 4.7: Detect silent gaps > 10s and re-transcribe them (STT engines often
+    // skip whole windows when confidence is low — this catches those misses).
+    try {
+      const audioDuration = await getAudioDuration(audioPath);
+      allSegments = await fillTranscriptionGaps({
+        segments: allSegments, audioPath, audioDuration,
+        whisperModel, sourceLanguage, sessionId, fileIndex, tempDir,
+        basePercent: 70, endPercent: 76,
+      });
+    } catch (e) {
+      console.error('Gap-fill skipped:', e.message);
+    }
 
     // Step 5: Save original SRT
     const srtContent = buildSrt(allSegments);
